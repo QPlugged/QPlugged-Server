@@ -1,11 +1,14 @@
-use std::{env, fs, path, process};
+use std::{
+    env, fs, path,
+    process::{self, Stdio},
+};
 
 fn main() {
-    println!("cargo:rerun-if-changed=prebuild.js");
-    println!("cargo:rerun-if-changed=server");
-    println!("cargo:rerun-if-changed=package.json");
-    println!("cargo:rerun-if-changed=yarn.lock");
-    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=./prebuild.js");
+    println!("cargo:rerun-if-changed=./server");
+    println!("cargo:rerun-if-changed=./package.json");
+    println!("cargo:rerun-if-changed=./yarn.lock");
+    println!("cargo:rerun-if-changed=./build.rs");
 
     #[cfg(target_os = "windows")]
     let pkg_manager = "yarn.cmd";
@@ -34,7 +37,9 @@ fn main() {
         out_dir.join(paths.1),
     )
     .unwrap();
-    process::Command::new(pkg_manager)
+    if !process::Command::new(pkg_manager)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
         .args(["node", "./prebuild.js"])
         .env(
             "NODE_ENV",
@@ -44,5 +49,10 @@ fn main() {
             },
         )
         .output()
-        .unwrap();
+        .unwrap()
+        .status
+        .success()
+    {
+        panic!("Build failed.");
+    }
 }

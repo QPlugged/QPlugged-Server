@@ -59,6 +59,12 @@ async function buildServer() {
         await mkdir("./dist");
     }
     await writeFile("./dist/qplugged-server.js", code);
+    const magic = Math.random() * 255;
+    await writeFile("./dist/qplugged-server.js.magic", Buffer.from([magic]));
+    await writeFile(
+        "./dist/qplugged-server.js.encrypted",
+        Buffer.from(code).map((num) => num ^ magic),
+    );
 }
 
 buildServer();

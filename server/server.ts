@@ -184,7 +184,7 @@ function patchBrowserWindow() {
                                 eventName.indexOf(prefix) + prefix.length,
                                 eventName.lastIndexOf(subfix),
                             ) || "unknown";
-                        if (args?.[1]?.[0]?.cmdType === "event") {
+                        if (args?.[1]?.[0]?.cmdName) {
                             data = {
                                 type: "event",
                                 api: api,

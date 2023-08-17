@@ -1,39 +1,36 @@
+use crate::fs_extra::{copy_dir_all_empty, write_file_str};
+use async_ctrlc::CtrlC;
 use directories::ProjectDirs;
-use std::{env, ffi::c_void, fs, io, path, process};
+#[cfg(target_os = "windows")]
+use std::ffi::c_void;
+use std::{env, path::PathBuf, process::Stdio};
+#[cfg(target_os = "linux")]
+use tokio::fs::{read_link, try_exists};
+use tokio::{
+    fs::{copy, create_dir_all, read_to_string},
+    io::{AsyncBufReadExt, BufReader},
+    process::Command,
+};
+#[cfg(target_os = "windows")]
 use windows::{
     w,
-    Win32::{
-        Foundation::{NO_ERROR, WIN32_ERROR},
-        System::Registry::{
-            RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RRF_SUBKEY_WOW6432KEY,
-        },
-    },
+    Win32::{Foundation::*, System::Registry::*},
 };
 
-fn copy_dir_all(from: path::PathBuf, to: path::PathBuf) -> io::Result<()> {
-    fs::create_dir_all(&to)?;
-    for ecorery in fs::read_dir(from)? {
-        let ecorery = ecorery?;
-        if ecorery.file_type()?.is_dir() {
-            copy_dir_all(ecorery.path(), to.join(ecorery.file_name()))?;
-        } else {
-            fs::copy(ecorery.path(), to.join(ecorery.file_name()))?;
-        }
-    }
-    Ok(())
-}
+mod fs_extra;
 
-struct CoreJsData(String, String);
-
-fn patch_core(js_path: impl AsRef<path::Path>) -> Result<CoreJsData, &'static str> {
-    let original_js = fs::read_to_string(&js_path).or(Err("cannot read original js"))?;
-    let server_js = include_str!("../dist/qplugged-server.js");
-    let binding = env::current_exe().or(Err("cannot get current dir"))?;
-    let qp_dir = binding
-        .parent()
-        .ok_or("cannot get current dir")?
-        .to_str()
-        .ok_or("cannot get current dir")?;
+async fn patch_core(js_path: PathBuf) -> Result<(String, String), ()> {
+    let original_js = tokio::fs::read_to_string(&js_path).await.or(Err(()))?;
+    let magic = include_bytes!("../dist/qplugged-server.js.magic");
+    let server_js = String::from_utf8(
+        include_bytes!("../dist/qplugged-server.js.encrypted")
+            .iter()
+            .map(|num| num ^ magic[0])
+            .collect(),
+    )
+    .or(Err(()))?;
+    let binding = env::current_exe().or(Err(()))?;
+    let qp_dir = binding.parent().ok_or(())?.to_str().ok_or(())?;
     let qp_dir = qp_dir
         .replace("\n", "\\n")
         .replace("\r", "\\r")
@@ -43,20 +40,19 @@ fn patch_core(js_path: impl AsRef<path::Path>) -> Result<CoreJsData, &'static st
         .replace("\\", "\\\\");
     let patched_js =
         format!("\"use strict\";global.__QP_DIR=\"{qp_dir}\";{server_js}{original_js}");
-    let js_data: CoreJsData = CoreJsData(original_js, patched_js);
-    Ok(js_data)
+    Ok((original_js, patched_js))
 }
 
-fn copy_core_dir(from: path::PathBuf, to: path::PathBuf) -> io::Result<()> {
-    if to.exists() {
-        fs::remove_dir_all(to.clone())?;
-    }
-
-    copy_dir_all(from, to)?;
-    Ok(())
+async fn get_app_dir() -> Option<PathBuf> {
+    let app_data_dir = ProjectDirs::from("com", "QPlugged", "Server")?
+        .data_local_dir()
+        .to_path_buf();
+    create_dir_all(app_data_dir.clone()).await.ok()?;
+    Some(app_data_dir)
 }
 
-fn get_core_dir() -> Result<path::PathBuf, WIN32_ERROR> {
+#[cfg(target_os = "windows")]
+async fn get_core_executable() -> Option<PathBuf> {
     let mut value: Vec<u16> = vec![0; 1024];
 
     let mut my_size = (std::mem::size_of::<u16>() * value.len()) as u32;
@@ -75,39 +71,87 @@ fn get_core_dir() -> Result<path::PathBuf, WIN32_ERROR> {
     };
 
     if result != NO_ERROR {
-        return Err(result);
+        return None;
     }
 
-    Ok(path::PathBuf::new()
-        .join(String::from_utf16(&value).or(Err(NO_ERROR))?)
-        .parent()
-        .ok_or(NO_ERROR)?
-        .to_path_buf())
+    Some(
+        PathBuf::new()
+            .join(String::from_utf16(&value).ok()?)
+            .parent()?
+            .to_path_buf()
+            .join("QQ.exe"),
+    )
 }
 
-pub fn main() -> Result<(), &'static str> {
-    let app_data_dir = ProjectDirs::from("com", "QPlugged", "Server")
-        .ok_or("cannot get app_data_dir")?
-        .data_local_dir()
+#[cfg(target_os = "linux")]
+async fn get_core_executable() -> Option<PathBuf> {
+    let possible_files = vec![
+        "/usr/bin/linuxqq",
+        "/usr/bin/qq",
+        "/var/lib/flatpak/app/com.qq.QQ/current/active/files/extra/QQ/qq",
+    ];
+    for file in possible_files {
+        if try_exists(file).await.ok() == Some(true) {
+            if let Some(exe) = read_link(file).await.ok() {
+                return Some(exe);
+            } else {
+                return Some(file.into());
+            }
+        }
+    }
+    None
+}
+
+#[tokio::main]
+pub async fn main() -> Result<(), String> {
+    let app_data_dir = get_app_dir().await.ok_or("Cannot get AppData directory.")?;
+    let core_executable = get_core_executable()
+        .await
+        .ok_or("Cannot get core executable. Is the core installed?")?;
+    let core_dir = core_executable
+        .parent()
+        .ok_or("Cannot get core directory.")?
         .to_path_buf();
-    let core_dir = get_core_dir().or(Err("cannot get core dir"))?;
     let copied_core_dir = app_data_dir.join("core");
-    let copied_core_executable = copied_core_dir.join("QQ.exe");
+    let copied_core_executable = copied_core_dir.join(
+        core_executable
+            .file_name()
+            .ok_or("Cannot get core executable filename.")?,
+    );
+
+    #[cfg(target_os = "windows")]
     let version_json_file = core_dir
         .join("resources")
         .join("app")
         .join("versions")
         .join("config.json");
-    let version_json_data =
-        fs::read_to_string(version_json_file.clone()).or(Err("cannot read version info file"))?;
-    let stored_version_json_path = app_data_dir.join("core_config.json");
-    let stored_version_json_data =
-        fs::read_to_string(stored_version_json_path.clone()).unwrap_or(String::new());
+    #[cfg(not(target_os = "windows"))]
+    let version_json_file = core_dir.join("resources").join("app").join("package.json");
+    let version_json_data = read_to_string(version_json_file.clone())
+        .await
+        .or(Err(format!(
+            "Failed to read version configuration file: {}",
+            version_json_file.display(),
+        )))?;
+    let stored_version_json_file = app_data_dir.join("core_config.json");
+    let stored_version_json_data = read_to_string(stored_version_json_file.clone())
+        .await
+        .unwrap_or(String::new());
     if version_json_data != stored_version_json_data {
-        copy_core_dir(core_dir.clone(), copied_core_dir.clone())
-            .or(Err("failed to copy core dir"))?;
-        fs::copy(version_json_file, stored_version_json_path)
-            .or(Err("failed to copy version info file"))?;
+        copy_dir_all_empty(core_dir.clone(), copied_core_dir.clone())
+            .await
+            .or(Err(format!(
+                "Failed to copy core directory, from: {} to: {}",
+                core_dir.display(),
+                copied_core_dir.display()
+            )))?;
+        copy(version_json_file.clone(), stored_version_json_file.clone())
+            .await
+            .or(Err(format!(
+                "Failed to copy version configuration file, from: {} to: {}",
+                version_json_file.display(),
+                stored_version_json_file.display(),
+            )))?;
     }
 
     let js_path = copied_core_dir
@@ -115,41 +159,72 @@ pub fn main() -> Result<(), &'static str> {
         .join("app")
         .join("app_launcher")
         .join("index.js");
-    let js_data = patch_core(&js_path).or(Err("cannot read js data"))?;
-    let original_js = js_data.0;
-    let patched_js = js_data.1;
+    let (original_js, patched_js) = patch_core(js_path.clone()).await.or(Err(format!(
+        "Failed to read entry js: {}",
+        js_path.display()
+    )))?;
 
-    let mut child = process::Command::new(copied_core_executable)
-        .stdout(process::Stdio::piped())
-        .stderr(process::Stdio::inherit())
+    let mut child = Command::new(copied_core_executable.clone())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
         .spawn()
-        .or(Err("cannot spawn core process"))?;
-    let stdout = child.stdout.take().ok_or("cannot get core stdout")?;
+        .or(Err(format!(
+            "Failed to spawn core process: {}",
+            copied_core_executable.display(),
+        )))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("Failed to get core process stdout handle.")?;
+
+    async fn inject_js_file(js_path: PathBuf, patched_js: String) -> Result<(), String> {
+        write_file_str(js_path.clone(), &patched_js)
+            .await
+            .or(Err(format!(
+                "Failed to write patched entry js: {}",
+                js_path.display(),
+            )))?;
+        Ok(())
+    }
 
     const PORT_START_FLAG: &str = "[QPLUGGED_INIT_PORT]";
     const PORT_END_FLAG: &str = "[/]";
-    let mut is_code_injected = false;
-    let mut f = io::BufReader::new(stdout);
+
+    #[cfg(not(target_os = "linux"))]
+    let is_code_injected = false;
+    #[cfg(target_os = "linux")]
+    let is_code_injected = true;
+    #[cfg(target_os = "linux")]
+    inject_js_file(js_path.clone(), patched_js.clone()).await?;
+
+    let mut f = BufReader::new(stdout);
     loop {
         let mut buf = String::new();
-        io::BufRead::read_line(&mut f, &mut buf).or(Err("cannot read stdout"))?;
+        f.read_line(&mut buf)
+            .await
+            .or(Err("Failed to read core process stdout."))?;
         print!("{buf}");
+        #[cfg(not(target_os = "linux"))]
         if buf.contains("[preload]") && !is_code_injected {
-            io::Write::write_all(
-                &mut fs::File::create(js_path.clone()).unwrap(),
-                patched_js.as_bytes(),
-            )
-            .or(Err("failed to write patched js data"))?;
-            is_code_injected = true;
-        } else if buf.contains(PORT_START_FLAG) && buf.contains(PORT_END_FLAG) && is_code_injected {
-            io::Write::write_all(
-                &mut fs::File::create(js_path.clone()).unwrap(),
-                original_js.as_bytes(),
-            )
-            .or(Err("failed to write original js data back"))?;
+            inject_js_file(js_path.clone(), patched_js.clone()).await?;
+        }
+        if buf.contains(PORT_START_FLAG) && buf.contains(PORT_END_FLAG) && is_code_injected {
+            write_file_str(js_path.clone(), &original_js)
+                .await
+                .or(Err(format!(
+                    "Failed to write original entry js back: {}",
+                    js_path.display()
+                )))?;
             break;
         }
     }
-    child.wait().or(Err("failed to wait core process exit"))?;
+
+    tokio::select! {
+       _ = child.wait() => (),
+       _ = CtrlC::new().or(Err("Failed to create Ctrl+C handler."))? => (),
+    };
+
+    child.kill().await.or(Err("Failed to kill core process."))?;
+
     Ok(())
 }
