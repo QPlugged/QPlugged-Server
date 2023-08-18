@@ -188,7 +188,7 @@ pub async fn main() -> Result<(), String> {
     }
 
     #[cfg(not(target_os = "linux"))]
-    let is_code_injected = false;
+    let mut is_code_injected = false;
     #[cfg(target_os = "linux")]
     let is_code_injected = true;
     #[cfg(target_os = "linux")]
@@ -202,12 +202,13 @@ pub async fn main() -> Result<(), String> {
             f.read_line(&mut buf)
                 .await
                 .or(Err("Failed to read core process stdout."))?;
-            print!("{buf}");
+
             #[cfg(not(target_os = "linux"))]
             if buf.contains("[preload]") && !is_code_injected {
                 inject_js_file(js_path.clone(), patched_js.clone()).await?;
+                is_code_injected = true;
             }
-            if buf.contains("QPlugged") && is_code_injected {
+            if buf.contains("[QPLUGGED_STARTED_SUCCESSFULLY]") && is_code_injected {
                 write_file_str(js_path.clone(), &original_js)
                     .await
                     .or(Err(format!(
@@ -215,6 +216,8 @@ pub async fn main() -> Result<(), String> {
                         js_path.display()
                     )))?;
                 break;
+            } else {
+                print!("{buf}");
             }
         }
         child.wait().await.or(Err("Failed to wait core process to exit."))?;
