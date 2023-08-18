@@ -1,9 +1,12 @@
+import { app } from "electron";
 import { initDebugger } from "./debugger";
 import { listenPort } from "./env";
 import { patchModuleLoader } from "./modules";
 import { registerPatch } from "./server";
 
-console.log(`[QPLUGGED_INIT_PORT]${listenPort}[/]`);
+app.disableHardwareAcceleration();
+
+console.log(`QPlugged 远程连接端口: ${listenPort}`);
 initDebugger();
 patchModuleLoader();
 registerPatch();

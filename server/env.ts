@@ -6,10 +6,12 @@ export const resourceDir: string = global.__QP_DIR;
 export const isProduction: boolean = IS_PROD;
 
 export const isInspectorMode =
-    (process.env.QP_SERVER_INSPECTOR !== undefined &&
-        !!parseInt(process.env.QP_SERVER_INSPECTOR)) ||
-    false;
+    process.env.QP_SERVER_INSPECTOR !== undefined
+        ? !!parseInt(process.env.QP_SERVER_INSPECTOR)
+        : false;
 export const listenPort =
-    (process.env.QP_SERVER_PORT !== undefined &&
-        parseInt(process.env.QP_SERVER_PORT)) ||
-    (isProduction ? findFreePort() : 15321);
+    process.env.QP_SERVER_PORT !== undefined
+        ? parseInt(process.env.QP_SERVER_PORT)
+        : isProduction
+        ? findFreePort()
+        : 15321;
