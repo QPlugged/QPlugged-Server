@@ -187,9 +187,6 @@ pub async fn main() -> Result<(), String> {
         Ok(())
     }
 
-    const PORT_START_FLAG: &str = "[QPLUGGED_INIT_PORT]";
-    const PORT_END_FLAG: &str = "[/]";
-
     #[cfg(not(target_os = "linux"))]
     let is_code_injected = false;
     #[cfg(target_os = "linux")]
@@ -208,7 +205,7 @@ pub async fn main() -> Result<(), String> {
         if buf.contains("[preload]") && !is_code_injected {
             inject_js_file(js_path.clone(), patched_js.clone()).await?;
         }
-        if buf.contains(PORT_START_FLAG) && buf.contains(PORT_END_FLAG) && is_code_injected {
+        if buf.contains("QPlugged") && is_code_injected {
             write_file_str(js_path.clone(), &original_js)
                 .await
                 .or(Err(format!(
