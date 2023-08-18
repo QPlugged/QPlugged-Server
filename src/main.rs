@@ -194,30 +194,32 @@ pub async fn main() -> Result<(), String> {
     #[cfg(target_os = "linux")]
     inject_js_file(js_path.clone(), patched_js.clone()).await?;
 
-    let mut f = BufReader::new(stdout);
-    loop {
-        let mut buf = String::new();
-        f.read_line(&mut buf)
-            .await
-            .or(Err("Failed to read core process stdout."))?;
-        print!("{buf}");
-        #[cfg(not(target_os = "linux"))]
-        if buf.contains("[preload]") && !is_code_injected {
-            inject_js_file(js_path.clone(), patched_js.clone()).await?;
-        }
-        if buf.contains("QPlugged") && is_code_injected {
-            write_file_str(js_path.clone(), &original_js)
-                .await
-                .or(Err(format!(
-                    "Failed to write original entry js back: {}",
-                    js_path.display()
-                )))?;
-            break;
-        }
-    }
-
     tokio::select! {
-       _ = child.wait() => (),
+       _ = async {
+        let mut f = BufReader::new(stdout);
+        loop {
+            let mut buf = String::new();
+            f.read_line(&mut buf)
+                .await
+                .or(Err("Failed to read core process stdout."))?;
+            print!("{buf}");
+            #[cfg(not(target_os = "linux"))]
+            if buf.contains("[preload]") && !is_code_injected {
+                inject_js_file(js_path.clone(), patched_js.clone()).await?;
+            }
+            if buf.contains("QPlugged") && is_code_injected {
+                write_file_str(js_path.clone(), &original_js)
+                    .await
+                    .or(Err(format!(
+                        "Failed to write original entry js back: {}",
+                        js_path.display()
+                    )))?;
+                break;
+            }
+        }
+        child.wait().await.or(Err("Failed to wait core process to exit."))?;
+        Ok::<(), String>(())
+       } => (),
        _ = CtrlC::new().or(Err("Failed to create Ctrl+C handler."))? => (),
     };
 
