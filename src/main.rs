@@ -202,8 +202,6 @@ pub async fn main() -> Result<(), String> {
     #[cfg(not(target_os = "linux"))]
     let mut is_code_injected = false;
     #[cfg(target_os = "linux")]
-    let is_code_injected = true;
-    #[cfg(target_os = "linux")]
     inject_js_file(copied_js_path.clone(), patched_js.clone()).await?;
 
     let read_loop = async {
