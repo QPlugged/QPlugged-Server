@@ -177,11 +177,11 @@ pub async fn main() -> Result<(), String> {
         .take()
         .ok_or("Failed to get core process stdout handle.")?;
 
-    async fn inject_js_file(js_path: PathBuf, patched_js: String) -> Result<(), String> {
-        write_file_str(js_path.clone(), &patched_js)
+    async fn inject_js_file(js_path: PathBuf, js_data: String) -> Result<(), String> {
+        write_file_str(js_path.clone(), &js_data)
             .await
             .or(Err(format!(
-                "Failed to write patched entry js: {}",
+                "Failed to write entry js: {}",
                 js_path.display(),
             )))?;
         Ok(())
@@ -194,39 +194,50 @@ pub async fn main() -> Result<(), String> {
     #[cfg(target_os = "linux")]
     inject_js_file(js_path.clone(), patched_js.clone()).await?;
 
-    tokio::select! {
-       _ = async {
+    let read_loop = async {
         let mut f = BufReader::new(stdout);
         loop {
             let mut buf = String::new();
-            f.read_line(&mut buf)
-                .await
-                .or(Err("Failed to read core process stdout."))?;
-
+            if f.read_line(&mut buf).await.is_err() {
+                break;
+            }
+            print!("{buf}");
             #[cfg(not(target_os = "linux"))]
             if buf.contains("[preload]") && !is_code_injected {
                 inject_js_file(js_path.clone(), patched_js.clone()).await?;
                 is_code_injected = true;
             }
             if buf.contains("[QPLUGGED_STARTED_SUCCESSFULLY]") && is_code_injected {
-                write_file_str(js_path.clone(), &original_js)
-                    .await
-                    .or(Err(format!(
-                        "Failed to write original entry js back: {}",
-                        js_path.display()
-                    )))?;
-                break;
-            } else {
-                print!("{buf}");
+                inject_js_file(js_path.clone(), original_js.clone()).await?;
             }
         }
-        child.wait().await.or(Err("Failed to wait core process to exit."))?;
         Ok::<(), String>(())
-       } => (),
-       _ = CtrlC::new().or(Err("Failed to create Ctrl+C handler."))? => (),
     };
 
-    child.kill().await.or(Err("Failed to kill core process."))?;
+    let wait_core = async {
+        child
+            .wait()
+            .await
+            .or(Err("Failed to wait core process to exit."))?;
+        Ok::<(), String>(())
+    };
+
+    let ctrlc_handler = async {
+        CtrlC::new()
+            .or(Err("Failed to create Ctrl+C handler."))?
+            .await;
+        Ok::<(), String>(())
+    };
+
+    tokio::select! {
+        v = read_loop => v,
+        v = wait_core => v,
+        v = ctrlc_handler => v,
+    }?;
+
+    inject_js_file(js_path.clone(), original_js.clone()).await?;
+
+    child.kill().await.unwrap_or(());
 
     Ok(())
 }

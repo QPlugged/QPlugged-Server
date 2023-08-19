@@ -12,9 +12,9 @@ initDebugger();
 patchModuleLoader();
 registerPatch();
 
-if (process.platform !== "linux") {
-    console.log = () => undefined;
-    console.info = () => undefined;
-    console.warn = () => undefined;
-    console.error = () => undefined;
-}
+// if (process.platform !== "linux") {
+//     console.log = () => undefined;
+//     console.info = () => undefined;
+//     console.warn = () => undefined;
+//     console.error = () => undefined;
+// }
