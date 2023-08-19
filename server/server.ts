@@ -56,6 +56,8 @@ function patchBrowserWindow() {
                 const webContent = window.webContents;
                 const registerSuffix = "-register";
                 const isRegister = data.api.endsWith(registerSuffix);
+                const unregisterSuffix = "-unregister";
+                const isUnregister = data.api.endsWith(unregisterSuffix);
                 const msg = [
                     {
                         returnValue: undefined,
@@ -68,8 +70,16 @@ function patchBrowserWindow() {
                             0,
                             isRegister
                                 ? data.api.lastIndexOf(registerSuffix)
+                                : isUnregister
+                                ? data.api.lastIndexOf(unregisterSuffix)
                                 : undefined,
-                        )}-${webContent.id}${isRegister ? "-register" : ""}`,
+                        )}-${webContent.id}${
+                            isRegister
+                                ? registerSuffix
+                                : isUnregister
+                                ? unregisterSuffix
+                                : ""
+                        }`,
                     },
                     [data.cmd, ...data.args],
                 ];
