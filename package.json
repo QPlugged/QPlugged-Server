@@ -1,6 +1,6 @@
 {
     "name": "qplugged-rust-server",
-    "version": "0.2.2",
+    "version": "0.3.0",
     "packageManager": "yarn@3.6.2",
     "scripts": {
         "dev": "cargo build",
