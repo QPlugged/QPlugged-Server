@@ -219,7 +219,7 @@ dependencies = [
 
 [[package]]
 name = "qplugged-rust-server"
-version = "0.2.2"
+version = "0.3.1"
 dependencies = [
  "async-ctrlc",
  "async-recursion",
