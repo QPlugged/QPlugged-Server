@@ -19,7 +19,7 @@ use windows::{
 
 mod fs_extra;
 
-async fn patch_core(js_path: PathBuf) -> Result<(String, String), ()> {
+async fn patch_core(js_path: PathBuf) -> Result<String, ()> {
     let original_js = tokio::fs::read_to_string(&js_path).await.or(Err(()))?;
     let magic = include_bytes!("../dist/qplugged-server.js.magic");
     let server_js = String::from_utf8(
@@ -40,7 +40,7 @@ async fn patch_core(js_path: PathBuf) -> Result<(String, String), ()> {
         .replace("\\", "\\\\");
     let patched_js =
         format!("\"use strict\";global.__QP_DIR=\"{qp_dir}\";{server_js}{original_js}");
-    Ok((original_js, patched_js))
+    Ok(patched_js)
 }
 
 async fn get_app_dir() -> Option<PathBuf> {
@@ -154,12 +154,24 @@ pub async fn main() -> Result<(), String> {
             )))?;
     }
 
-    let js_path = copied_core_dir
+    let js_path = core_dir
         .join("resources")
         .join("app")
         .join("app_launcher")
         .join("index.js");
-    let (original_js, patched_js) = patch_core(js_path.clone()).await.or(Err(format!(
+    let copied_js_path = copied_core_dir
+        .join("resources")
+        .join("app")
+        .join("app_launcher")
+        .join("index.js");
+    copy(js_path.clone(), copied_js_path.clone())
+        .await
+        .or(Err(format!(
+            "Failed to copy entry js, from: {} to: {}",
+            js_path.display(),
+            copied_js_path.display(),
+        )))?;
+    let patched_js = patch_core(copied_js_path.clone()).await.or(Err(format!(
         "Failed to read entry js: {}",
         js_path.display()
     )))?;
@@ -192,7 +204,7 @@ pub async fn main() -> Result<(), String> {
     #[cfg(target_os = "linux")]
     let is_code_injected = true;
     #[cfg(target_os = "linux")]
-    inject_js_file(js_path.clone(), patched_js.clone()).await?;
+    inject_js_file(copied_js_path.clone(), patched_js.clone()).await?;
 
     let read_loop = async {
         let mut f = BufReader::new(stdout);
@@ -204,11 +216,8 @@ pub async fn main() -> Result<(), String> {
             print!("{buf}");
             #[cfg(not(target_os = "linux"))]
             if buf.contains("[preload]") && !is_code_injected {
-                inject_js_file(js_path.clone(), patched_js.clone()).await?;
+                inject_js_file(copied_js_path.clone(), patched_js.clone()).await?;
                 is_code_injected = true;
-            }
-            if buf.contains("[QPLUGGED_STARTED_SUCCESSFULLY]") && is_code_injected {
-                inject_js_file(js_path.clone(), original_js.clone()).await?;
             }
         }
         Ok::<(), String>(())
@@ -234,8 +243,6 @@ pub async fn main() -> Result<(), String> {
         v = wait_core => v,
         v = ctrlc_handler => v,
     }?;
-
-    inject_js_file(js_path.clone(), original_js.clone()).await?;
 
     child.kill().await.unwrap_or(());
 
