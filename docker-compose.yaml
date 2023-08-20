@@ -1,0 +1,12 @@
+services:
+  server:
+    image: hiflysoft/qplugged-rust-server:v0.3.2
+    ports:
+      - 15321:80
+      - 5900:5900
+    volumes:
+      - qq_data:/var/opt/qq
+    restart: always
+
+volumes:
+  qq_data:
