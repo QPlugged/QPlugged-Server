@@ -9,6 +9,7 @@ RUN mkdir -p /var/opt/qq $HOME/.config && ln -s /var/opt/qq $HOME/.config/QQ
 COPY target/release/qplugged-rust-server /app/qplugged-rust-server
 COPY target/release/silk-codec /app/silk-codec
 COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 80
 EXPOSE 5900
