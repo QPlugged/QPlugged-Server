@@ -6,7 +6,6 @@ import { registerPatch } from "./server";
 
 app.disableHardwareAcceleration();
 
-console.log("[QPLUGGED_STARTED_SUCCESSFULLY]");
 console.log(`QPlugged 远程连接端口: ${listenPort}`);
 initDebugger();
 patchModuleLoader();

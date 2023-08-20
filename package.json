@@ -3,8 +3,8 @@
     "version": "0.3.1",
     "packageManager": "yarn@3.6.2",
     "scripts": {
-        "dev": "cargo build",
-        "build": "cargo build --release"
+        "dev": "LITCRYPT_ENCRYPT_KEY=\"\" cargo build",
+        "build": "LITCRYPT_ENCRYPT_KEY=\"<unnamed> panicked at , note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\" cargo build --release"
     },
     "devDependencies": {
         "@types/node": "^20.5.0",

@@ -20,6 +20,7 @@ tokio = { version = "1.32.0", features = [
 ] }
 async-ctrlc = "1.2.0"
 async-recursion = "1.0.4"
+litcrypt = "0.3"
 
 [profile.release]
 panic = "abort"   # Strip expensive panic clean-up logic

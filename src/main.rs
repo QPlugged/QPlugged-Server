@@ -1,6 +1,7 @@
 use crate::fs_extra::{copy_dir_all_empty, write_file_str};
 use async_ctrlc::CtrlC;
 use directories::ProjectDirs;
+use litcrypt::{lc, use_litcrypt};
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
 use std::{env, path::PathBuf, process::Stdio};
@@ -18,6 +19,8 @@ use windows::{
 };
 
 mod fs_extra;
+
+use_litcrypt!();
 
 async fn patch_core(js_path: PathBuf) -> Result<String, ()> {
     let original_js = tokio::fs::read_to_string(&js_path).await.or(Err(()))?;
@@ -38,13 +41,19 @@ async fn patch_core(js_path: PathBuf) -> Result<String, ()> {
         .replace("\"", "\\\"")
         .replace("\'", "\\\'")
         .replace("\\", "\\\\");
-    let patched_js =
-        format!("\"use strict\";global.__QP_DIR=\"{qp_dir}\";{server_js}{original_js}");
+    let patched_js = format!(
+        "\"{}\";{}\"{}\";{};{}",
+        lc!("use strict"),
+        lc!("global.__QP_DIR="),
+        qp_dir,
+        server_js,
+        original_js
+    );
     Ok(patched_js)
 }
 
 async fn get_app_dir() -> Option<PathBuf> {
-    let app_data_dir = ProjectDirs::from("com", "QPlugged", "Server")?
+    let app_data_dir = ProjectDirs::from(&lc!("com"), &lc!("QPlugged"), &lc!("Server"))?
         .data_local_dir()
         .to_path_buf();
     create_dir_all(app_data_dir.clone()).await.ok()?;
@@ -79,7 +88,7 @@ async fn get_core_executable() -> Option<PathBuf> {
             .join(String::from_utf16(&value).ok()?)
             .parent()?
             .to_path_buf()
-            .join("QQ.exe"),
+            .join(lc!("QQ.exe")),
     )
 }
 
@@ -102,38 +111,43 @@ async fn get_core_executable() -> Option<PathBuf> {
     None
 }
 
-#[tokio::main]
-pub async fn main() -> Result<(), String> {
-    let app_data_dir = get_app_dir().await.ok_or("Cannot get AppData directory.")?;
+pub async fn patch() -> Result<(), String> {
+    let app_data_dir = get_app_dir()
+        .await
+        .ok_or(lc!("Cannot get AppData directory."))?;
     let core_executable = get_core_executable()
         .await
-        .ok_or("Cannot get core executable. Is the core installed?")?;
+        .ok_or(lc!("Cannot get core executable. Is the core installed?"))?;
     let core_dir = core_executable
         .parent()
-        .ok_or("Cannot get core directory.")?
+        .ok_or(lc!("Cannot get core directory."))?
         .to_path_buf();
-    let copied_core_dir = app_data_dir.join("core");
+    let copied_core_dir = app_data_dir.join(lc!("core"));
     let copied_core_executable = copied_core_dir.join(
         core_executable
             .file_name()
-            .ok_or("Cannot get core executable filename.")?,
+            .ok_or(lc!("Cannot get core executable filename."))?,
     );
 
     #[cfg(target_os = "windows")]
     let version_json_file = core_dir
-        .join("resources")
-        .join("app")
-        .join("versions")
-        .join("config.json");
+        .join(lc!("resources"))
+        .join(lc!("app"))
+        .join(lc!("versions"))
+        .join(lc!("config.json"));
     #[cfg(not(target_os = "windows"))]
-    let version_json_file = core_dir.join("resources").join("app").join("package.json");
+    let version_json_file = core_dir
+        .join(lc!("resources"))
+        .join(lc!("app"))
+        .join(lc!("package.json"));
     let version_json_data = read_to_string(version_json_file.clone())
         .await
         .or(Err(format!(
-            "Failed to read version configuration file: {}",
+            "{}{}",
+            lc!("Failed to read version configuration file: "),
             version_json_file.display(),
         )))?;
-    let stored_version_json_file = app_data_dir.join("core_config.json");
+    let stored_version_json_file = app_data_dir.join(lc!("core_config.json"));
     let stored_version_json_data = read_to_string(stored_version_json_file.clone())
         .await
         .unwrap_or(String::new());
@@ -141,38 +155,45 @@ pub async fn main() -> Result<(), String> {
         copy_dir_all_empty(core_dir.clone(), copied_core_dir.clone())
             .await
             .or(Err(format!(
-                "Failed to copy core directory, from: {} to: {}",
+                "{}{}{}{}",
+                lc!("Failed to copy core directory, from: "),
                 core_dir.display(),
+                lc!(" to: "),
                 copied_core_dir.display()
             )))?;
         copy(version_json_file.clone(), stored_version_json_file.clone())
             .await
             .or(Err(format!(
-                "Failed to copy version configuration file, from: {} to: {}",
+                "{}{}{}{}",
+                lc!("Failed to copy version configuration file, from: "),
                 version_json_file.display(),
+                lc!(" to: "),
                 stored_version_json_file.display(),
             )))?;
     }
 
     let js_path = core_dir
-        .join("resources")
-        .join("app")
-        .join("app_launcher")
-        .join("index.js");
+        .join(lc!("resources"))
+        .join(lc!("app"))
+        .join(lc!("app_launcher"))
+        .join(lc!("index.js"));
     let copied_js_path = copied_core_dir
-        .join("resources")
-        .join("app")
-        .join("app_launcher")
-        .join("index.js");
+        .join(lc!("resources"))
+        .join(lc!("app"))
+        .join(lc!("app_launcher"))
+        .join(lc!("index.js"));
     copy(js_path.clone(), copied_js_path.clone())
         .await
         .or(Err(format!(
-            "Failed to copy entry js, from: {} to: {}",
+            "{}{}{}{}",
+            lc!("Failed to copy entry js, from: "),
             js_path.display(),
+            lc!(" to: "),
             copied_js_path.display(),
         )))?;
     let patched_js = patch_core(copied_js_path.clone()).await.or(Err(format!(
-        "Failed to read entry js: {}",
+        "{}{}",
+        lc!("Failed to read entry js: "),
         js_path.display()
     )))?;
 
@@ -181,19 +202,21 @@ pub async fn main() -> Result<(), String> {
         .stderr(Stdio::inherit())
         .spawn()
         .or(Err(format!(
-            "Failed to spawn core process: {}",
+            "{}{}",
+            lc!("Failed to spawn core process: "),
             copied_core_executable.display(),
         )))?;
     let stdout = child
         .stdout
         .take()
-        .ok_or("Failed to get core process stdout handle.")?;
+        .ok_or(lc!("Failed to get core process stdout handle."))?;
 
     async fn inject_js_file(js_path: PathBuf, js_data: String) -> Result<(), String> {
         write_file_str(js_path.clone(), &js_data)
             .await
             .or(Err(format!(
-                "Failed to write entry js: {}",
+                "{}{}",
+                lc!("Failed to write entry js: "),
                 js_path.display(),
             )))?;
         Ok(())
@@ -213,7 +236,10 @@ pub async fn main() -> Result<(), String> {
             }
             print!("{buf}");
             #[cfg(not(target_os = "linux"))]
-            if buf.contains("[preload]") && !is_code_injected {
+            if buf.contains(&lc!(
+                "c48457ac24c9ad33bd2e0250f734116535df7e8caeb043a6d3164fd6ea65046c"
+            )) && !is_code_injected
+            {
                 inject_js_file(copied_js_path.clone(), patched_js.clone()).await?;
                 is_code_injected = true;
             }
@@ -225,13 +251,13 @@ pub async fn main() -> Result<(), String> {
         child
             .wait()
             .await
-            .or(Err("Failed to wait core process to exit."))?;
+            .or(Err(lc!("Failed to wait core process to exit.")))?;
         Ok::<(), String>(())
     };
 
     let ctrlc_handler = async {
         CtrlC::new()
-            .or(Err("Failed to create Ctrl+C handler."))?
+            .or(Err(lc!("Failed to create Ctrl+C handler.")))?
             .await;
         Ok::<(), String>(())
     };
@@ -244,5 +270,15 @@ pub async fn main() -> Result<(), String> {
 
     child.kill().await.unwrap_or(());
 
+    Ok(())
+}
+
+#[tokio::main]
+pub async fn main() -> Result<(), String> {
+    let result = patch().await;
+    #[cfg(debug_assertions)]
+    result?;
+    #[cfg(not(debug_assertions))]
+    result.or(Err("Unknown Error"))?;
     Ok(())
 }
