@@ -18,10 +18,8 @@ function patchBrowserWindow() {
     wss.on("error", () => undefined);
     wss.on("connection", (client) => {
         client.on("close", () => {
-            setTimeout(
-                () => wss.clients.size === 0 && app.quit(),
-                isProduction ? 1000 : 5000,
-            );
+            if (isProduction)
+                setTimeout(() => wss.clients.size === 0 && app.quit(), 1000);
         });
         client.on("message", (_data) => {
             const wrapPromise = (id: string, promise: Promise<any>) => {
