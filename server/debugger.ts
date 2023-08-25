@@ -1,4 +1,8 @@
+import debug from "debug";
+
+const logger = debug("debugger");
+
 export function initDebugger() {
     (process as any)._debugProcess(process.pid);
-    console.warn(`已在端口 ${process.debugPort} 上启动 Node.js 调试器`);
+    logger("已在端口 %d 上启动 Node.js 调试器", process.debugPort);
 }

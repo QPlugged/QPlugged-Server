@@ -1,6 +1,7 @@
 use crate::fs_extra::{copy_dir_all_empty, write_file_str};
 use async_ctrlc::CtrlC;
 use directories::ProjectDirs;
+use escape::escape_js_str;
 use litcrypt::{lc, use_litcrypt};
 #[cfg(target_os = "windows")]
 use std::ffi::c_void;
@@ -18,11 +19,12 @@ use windows::{
     Win32::{Foundation::*, System::Registry::*},
 };
 
+mod escape;
 mod fs_extra;
 
 use_litcrypt!();
 
-async fn patch_core(js_path: PathBuf) -> Result<String, ()> {
+async fn patch_core(js_path: PathBuf, data_dir: PathBuf) -> Result<String, ()> {
     let original_js = tokio::fs::read_to_string(&js_path).await.or(Err(()))?;
     let magic = include_bytes!("../dist/qplugged-server.js.magic");
     let server_js = String::from_utf8(
@@ -33,19 +35,15 @@ async fn patch_core(js_path: PathBuf) -> Result<String, ()> {
     )
     .or(Err(()))?;
     let binding = env::current_exe().or(Err(()))?;
-    let qp_dir = binding.parent().ok_or(())?.to_str().ok_or(())?;
-    let qp_dir = qp_dir
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-        .replace("\t", "\\t")
-        .replace("\"", "\\\"")
-        .replace("\'", "\\\'")
-        .replace("\\", "\\\\");
+    let res_dir = escape_js_str(binding.parent().ok_or(())?.to_str().ok_or(())?);
+    let data_dir = escape_js_str(data_dir.to_str().ok_or(())?);
     let patched_js = format!(
-        "\"{}\";{}\"{}\";{};{}",
+        "\"{}\";{}\"{}\";{}\"{}\";{};{}",
         lc!("use strict"),
-        lc!("global.__QP_DIR="),
-        qp_dir,
+        lc!("global.__QP_RES_DIR="),
+        res_dir,
+        lc!("global.__QP_DATA_DIR="),
+        data_dir,
         server_js,
         original_js
     );
@@ -191,11 +189,13 @@ pub async fn patch() -> Result<(), String> {
             lc!(" to: "),
             copied_js_path.display(),
         )))?;
-    let patched_js = patch_core(copied_js_path.clone()).await.or(Err(format!(
-        "{}{}",
-        lc!("Failed to read entry js: "),
-        js_path.display()
-    )))?;
+    let patched_js = patch_core(copied_js_path.clone(), app_data_dir)
+        .await
+        .or(Err(format!(
+            "{}{}",
+            lc!("Failed to read entry js: "),
+            js_path.display()
+        )))?;
 
     let mut child = Command::new(copied_core_executable.clone())
         .stdout(Stdio::piped())

@@ -1,3 +1,4 @@
+import { pcmToWav, silkToPcm } from "./audio";
 import { isInspectorMode, isProduction, listenPort } from "./env";
 import { defineModule } from "./modules";
 import { deserialize, serialize } from "@ungap/structured-clone";
@@ -8,7 +9,6 @@ import {
     ipcMain,
 } from "electron";
 import { WebSocketServer } from "ws";
-import { pcmToWav, silkToPcm } from "./audio";
 
 let loginWindowStatus: "opened" | "destroyed" | "never-shown" = "never-shown";
 let loginWindow: BrowserWindow | undefined;

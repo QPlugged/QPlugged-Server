@@ -1,7 +1,9 @@
 import { findFreePort } from "./freePort";
 
 // @ts-expect-error
-export const resourceDir: string = global.__QP_DIR;
+export const resourceDir: string = global.__QP_RES_DIR;
+// @ts-expect-error
+export const dataDir: string = global.__QP_DATA_DIR;
 // @ts-expect-error
 export const isProduction: boolean = IS_PROD;
 
