@@ -199,7 +199,7 @@ pub async fn patch() -> Result<(), String> {
 
     let mut child = Command::new(copied_core_executable.clone())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::null())
         .spawn()
         .or(Err(format!(
             "{}{}",
