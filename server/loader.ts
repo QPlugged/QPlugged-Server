@@ -12,7 +12,7 @@ export function loadScripts() {
         mkdirSync(scriptsPath);
     }
     for (const file of readdirSync(scriptsPath).sort()) {
-        const scriptPath = file;
+        const scriptPath = path.join(scriptsPath, file);
         if (existsSync(scriptPath) && statSync(scriptPath).isFile()) {
             logger("已加载外部脚本: %s", scriptPath);
             require(scriptPath);
