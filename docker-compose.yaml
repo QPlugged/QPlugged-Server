@@ -1,6 +1,6 @@
 services:
   server:
-    image: hiflysoft/qplugged-rust-server:v0.4.0
+    image: hiflysoft/qplugged-rust-server:v0.4.1
     ports:
       - 15321:80
       - 5900:5900
